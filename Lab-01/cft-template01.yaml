@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Beginners Templates of AWS CFT
+
+Parameters:
+  VPCID:
+    Type: String
+    Description: Enter The Existing VPC ID
+
+  SubnetId:
+    Type: String
+    Description: Subnet of the VPC need to be used
+
+  SecurityGroupId:
+    Type: String
+    Description: Enter the SecurityGroup ID
+
+  ImageId:
+    Type: String
+    Description: Image of the instance
+
+  InstanceType:
+    Type: String
+    Description: Instance Type for instance
+
+Resources:
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref ImageId
+      SecurityGroupIds:
+        - !Ref SecurityGroupId
+      SubnetId: !Ref SubnetId
+Outputs:
+  InstanceId:
+    Description: The ID of the EC2 instance
+    Value: !Ref MyEC2Instance
+
+  InstancePublicIp:
+    Description: Public IP of the EC2 instance
+    Value: !GetAtt MyEC2Instance.PublicIp
