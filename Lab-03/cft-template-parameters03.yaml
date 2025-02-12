@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Parameters Template 03
+
+Parameters:
+  MyAvailabilityZone:
+    Description: Select the AZ
+    Type: String
+    Default: ap-south-1b
+    AllowedValues:
+      - ap-south-1b
+      - ap-south-1a   
+      - ap-south-1c
+
+  InstanceType:
+    Type: String
+    Description: List of EC2 Instance to select
+    Default: t2.small
+    AllowedValues:
+      - t2.micro
+      - t2.medium
+
+  VPCID:
+    Type: String
+    Description: Enter The Existing VPC ID
+
+  SubnetId:
+    Type: String
+    Description: Subnet of the VPC need to be used
+
+  SecurityGroupId:
+    Type: String
+    Description: Enter the SecurityGroup ID
+
+  ImageId:
+    Type: String
+    Description: Image of the instance
+
+Resources: 
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      AvailabilityZone: !Ref MyAvailabilityZone
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref ImageId
+      SecurityGroupIds : 
+        - !Ref SecurityGroupId
+      SubnetId: !Ref SubnetId

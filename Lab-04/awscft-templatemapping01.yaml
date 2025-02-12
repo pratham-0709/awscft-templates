@@ -1,0 +1,50 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Mappings for the values
+
+Parameters:
+  # MyAvailabilityZone:
+  #   Description: Select the AZ
+  #   Type: String
+  #   Default: ap-south-1b
+  #   AllowedValues:
+  #     - ap-south-1b
+  #     - ap-south-1a   
+  #     - ap-south-1c
+
+  InstanceType:
+    Type: String
+    Description: List of EC2 Instance to select
+    Default: t2.small
+    AllowedValues:
+      - t2.micro
+      - t2.medium
+      - t2.small
+
+  VPCID:
+    Type: String
+    Description: Enter The Existing VPC ID
+
+  SubnetId:
+    Type: String
+    Description: Subnet of the VPC need to be used
+
+  SecurityGroupId:
+    Type: String
+    Description: Enter the SecurityGroup ID
+
+Mappings:
+  RegionMap:
+    ap-south-1:
+      AMI: ami-00bb6a80f01f03502
+    ap-northeast-1:
+      AMI: ami-0c50b6f7dc3701ddd
+
+Resources: 
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region" , AMI]
+      SecurityGroupIds : 
+        - !Ref SecurityGroupId
+      SubnetId: !Ref SubnetId

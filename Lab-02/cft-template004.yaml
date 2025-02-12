@@ -1,0 +1,43 @@
+# AWSTemplateFormatVersion: '2010-09-09'
+# Description: 'Simple template to create EC2 instance using existing VPC resources'
+
+# Resources:
+#   MyEC2Instance:
+#     Type: AWS::EC2::Instance
+#     Properties:
+#       InstanceType: t2.micro
+#       ImageId: ami-00bb6a80f01f03502  # Replace with a valid AMI ID
+#       SecurityGroupIds: sg-0c928c7472050571a
+#       SubnetId: subnet-09211d94bace0a331  # Ensure this Subnet ID exists in the specified VPC
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: Basic EC2 Instance.
+
+Resources:
+  DevEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0cd3dfa4e37921605
+      InstanceType: t2.micro
+      KeyName: cfn-key-1
+      SecurityGroups:
+        - default
+        - !Ref SSHSecurityGroup
+  SSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: my new SSH SG
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '8080'
+          ToPort: '8080'
+          CidrIp: 0.0.0.0/0
+
+  MyElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref DevEC2Instance
