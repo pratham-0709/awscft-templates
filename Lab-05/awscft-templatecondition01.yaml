@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Deploy EC2 instance only in production
+
+Parameters:
+  EnvironmentType:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+  
+  VPCID:
+    Type: String
+    Description: Enter The Existing VPC ID
+
+  SubnetId:
+    Type: String
+    Description: Subnet of the VPC need to be used
+
+  SecurityGroupId:
+    Type: String
+    Description: Enter the SecurityGroup ID
+
+
+Conditions:
+  IsProd: !Equals [!Ref EnvironmentType, prod]   # ✅ Condition: True only if prod
+
+Resources:
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Condition: IsProd   # ✅ EC2 will only be created if EnvironmentType = prod
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-023a307f3d27ea427

@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Condition Template Part 04
+
+Parameters:
+  EnvironmentName:
+    Description: Environment name for deployment
+    Type: String
+    Default: local
+    AllowedValues:
+      - local
+      - dev
+      - stg
+      - prod
+    ConstraintDescription: Must be Development or Production
+
+Mappings:
+  RegionMap:
+    ap-south-1:
+      AMI: ami-00bb6a80f01f03502
+    ap-northeast-1:
+      AMI: ami-0c50b6f7dc3701ddd
+
+  EnvironmentMap:
+    dev:
+      InstanceType: t2.micro
+    stg:
+      InstanceType: t2.medium
+    prod:
+      InstanceType: t3.micro
+
+Conditions:
+  CreateEIPForProd: !Equals
+    - !Ref EnvironmentName
+    - prod
+  CreateProdSecurityGroup: !Equals
+    - !Ref EnvironmentName
+    - prod
+  CreateDevSecurityGroup: !Not
+    - !Condition CreateProdSecurityGroup
+  RegionKeyUse: !And
+    - !Or
+      - !Equals
+        - !Ref AWS::Region
+        - ap-south-1
+      - !Equals
+        - !Ref AWS::Region
+        - ap-northeast-1
+    - !Equals
+      - !Ref EnvironmentName
+      - prod
+      # Another required condition
+
+Resources:
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - AMI
+      InstanceType: !FindInMap
+        - EnvironmentMap
+        - !Ref EnvironmentName
+        - InstanceType
+      SecurityGroupIds:
+        - !If
+          - CreateDevSecurityGroup
+          - !Ref MyDevSecurityGroup
+          - !Ref MyProdSecurityGroup
+      Key: !If
+        - RegionKeyUse
+        - cfn-key1
+        - cfn-key2
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-instance
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  MyProdSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateProdSecurityGroup
+    Properties:
+      GroupDescription: Test SG for Prod ENV
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  MyDevSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateDevSecurityGroup
+    Properties:
+      GroupDescription: Test SG for the DEV ENV
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+
+  MyEIP:
+    Type: AWS::EC2::EIP
+    Condition: CreateEIPForProd
+    Properties:
+      InstanceId: !Ref MyEC2Instance
+
+Outputs:
+  InstanceId:
+    Description: Instance ID
+    Value: !Sub MyEC2Instance
+
+  InstancePublicIp:
+    Description: Public IP of the Instance
+    Value: !GetAtt MyEC2Instance.PublicIp
