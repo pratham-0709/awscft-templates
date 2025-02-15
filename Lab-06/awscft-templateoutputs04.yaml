@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS CFT Templates for Outputs Part 04
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Description: Choosing ENV to deploy resource
+    Default: local
+    AllowedValues:
+      - local
+      - dev
+      - stg
+      - prod
+
+  VPCID:
+    Type: String
+    Description: Enter the existing VPC ID
+  SubnetId:
+    Type: String
+    Description: Subnet ID of the existing VPC ID
+
+Mappings:
+  RegionMap:
+    ap-south-1:
+      AMI: ami-00bb6a80f01f03502
+    ap-northeast-1:
+      AMI: ami-023a307f3d27ea427
+
+  EnvironmentMap:
+    dev:
+      InstanceType: t2.small
+    stg:
+      InstanceType: t2.micro
+    prod:
+      InstanceType: t2.medium
+
+Conditions:
+  CreateDevSecurityGroup: !Equals [!Ref EnvironmentName, dev]
+
+Resources:
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [RegionMap, !Ref AWS::Region, AMI]
+      InstanceType: !FindInMap [EnvironmentMap, !Ref EnvironmentName, InstanceType]
+      SecurityGroupIds:
+        - !If 
+          - CreateDevSecurityGroup
+          - !Ref TestSecurityGroup
+          - !Ref AWS::NoValue
+      SubnetId: !Ref SubnetId
+
+  TestSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateDevSecurityGroup
+    Properties:
+      GroupDescription: Test DEV SG for CFT Outputs
+      VpcId: !Ref VPCID
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+
+Outputs:
+  InstanceId:
+    Description: Instance ID
+    Value: !Ref MyEC2Instance
+
+  DNSName:
+    Description: Public DNS Name of the Instance
+    Value: !GetAtt MyEC2Instance.PublicDnsName
+
+  AZ:
+    Description: Instance AZ
+    Value: !GetAtt MyEC2Instance.AvailabilityZone
+    Export:
+      Name: !Sub "${AWS::StackName}-InstanceAZ"
+
+  SecurityGroupOP:
+    Description: Test SG for the DEV ENV
+    Value: !Ref TestSecurityGroup
+    Condition: CreateDevSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-TestSecurityGroup"
+
+# Properties validation failed for resource MyEC2Instance with message: #/SecurityGroupIds: expected type: JSONArray, found: String

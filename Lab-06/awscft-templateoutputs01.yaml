@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: CFT Templates for Outputs
+  
+Parameters:
+  EnvironmentType:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+  
+  VPCID:
+    Type: String
+    Description: Enter The Existing VPC ID
+
+  SubnetId:
+    Type: String
+    Description: Subnet of the VPC need to be used
+
+  SecurityGroupId:
+    Type: String
+    Description: Enter the SecurityGroup ID
+  
+Mappings:
+  RegionMap:
+    ap-south-1:
+      AMI: ami-023a307f3d27ea427
+    ap-northeast-1:
+      AMI: ami-00bb6a80f01f03502  
+
+  EnvironmentMap:
+    dev:
+      InstanceType: t2.small
+    stg:
+      InstanceType: t2.micro
+    prod:
+      InstanceType: t2.medium
+    
+Resources:
+  MyEC2Instance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
+      InstanceType: !FindInMap [EnvironmentMap, !Ref EnvironmentName, InstanceType]
+      SubnetId: !Ref SubnetId
+
+Outputs:
+  InstanceId:
+    Description: Instance ID
+    Value: !Ref MyEC2Instance
+  
+  InstancePublicIp:
+    Description: Instance Public IP
+    Value: !GetAtt MyEC2Instance.PublicIp
