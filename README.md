@@ -43,4 +43,4 @@ AWS CloudFormation is a service that helps you model and set up your Amazon Web 
 
 ## Acknowledgements
 
-I would like to extend our special thanks **STACKSIMPLIFY** resources for their invaluable references and contributions that made this repository possible.
+I would like to extend our special thanks to **STACKSIMPLIFY** for their invaluable references , resources which help me understand the concept not just theoretically but more practically which made this repository possible. 
