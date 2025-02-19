@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CFT Templates for Metadata
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    ConstraintDescription: Must Be Either Development and Production
+
+  InstanceType:    # Added missing InstanceType parameter
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+    Description: Select instance type for the EC2 instance
+
+  VPCID:
+    Type: String
+    Description: Enter The Existing VPC ID
+
+  SubnetId:
+    Type: String
+    Description: Subnet of the VPC need to be used
+
+  SecurityGroupId:
+    Type: String
+    Description: Enter the SecurityGroup ID
+  
+  AvailabilityZone:    # Fixed spelling of 'Availability'
+    Description: AZ for the Instance
+    Type: String
+    Default: ap-south-1a
+    AllowedValues:
+      - ap-south-1a
+      - ap-south-1b
+      - ap-south-1c
+
+Metadata:
+  AWS::CloudFormation::Interface:    # Fixed capitalization
+    ParameterGroups:    # Fixed spelling
+      - Label:
+          default: "EC2 Instance Configuration"
+        Parameters:
+          - InstanceType
+          - AvailabilityZone
+      - Label:
+          default: "Environment Configuration"
+        Parameters:
+          - EnvironmentName
+    ParameterLabels:
+      EnvironmentName:
+        default: "Which environment are we planning to create this instance in?"
+      InstanceType:
+        default: "Select the EC2 instance type"
+      AvailabilityZone:
+        default: "Select the Availability Zone"
+
+Conditions:
+  CreateEIPforProd: !Equals [!Ref EnvironmentName, prod]
+
+Resources:
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-00bb6a80f01f03502
+      InstanceType: !Ref InstanceType
+      AvailabilityZone: !Ref AvailabilityZone    # Fixed spelling
+      SubnetId: !Ref SubnetId    # Added missing SubnetId
+      SecurityGroupIds:    # Added missing Security Group
+        - !Ref SecurityGroupId
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-instance
+        - Key: Environment
+          Value: !Ref EnvironmentName
+    
+  MyProdEIP:
+    Type: AWS::EC2::EIP
+    Condition: CreateEIPforProd
+    Properties:    # Fixed Properties format
+      Domain: vpc    # Added required Domain property
+      InstanceId: !Ref MyEC2Instance    # Fixed format
+
+Outputs:
+  InstanceId:
+    Description: Instance ID 
+    Value: !Ref MyEC2Instance
+  
+  InstancePublicIp:
+    Description: Public IP of the Instance
+    Value: !GetAtt MyEC2Instance.PublicIp
+  
+  DNSName:
+    Description: DNS Address of the Instance
+    Value: !GetAtt MyEC2Instance.PublicDnsName
+  
+  AZ:
+    Description: Availability Zone of the Instance
+    Value: !GetAtt MyEC2Instance.AvailabilityZone

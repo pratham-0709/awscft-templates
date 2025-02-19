@@ -1,0 +1,143 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS CFT Templates for Implementing Init Scripts
+  
+Parameters:
+  EnvironmentName:
+    Type: String
+    Description: Choosing ENV to deploy resource
+    Default: local
+    AllowedValues:
+      - local
+      - dev
+      - stg
+      - prod
+  
+  RegionName:
+    Type: String
+    Default: ap-south-1
+    AllowedValues:
+      - ap-south-1
+      - ap-northeast-1
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Environment Configuration"
+        Parameters:
+          - EnvironmentName
+          - RegionName
+    ParameterLabels:
+      EnvironmentName:
+        default: "Select Environment To Deploy !" 
+      RegionName:
+        default: "Select Region Name To Deploy !"
+  
+Mappings:
+  EnvironmentMap:
+    dev:
+      InstanceType: t2.micro
+    stg:
+      InstanceType: t2.medium
+    prod:
+      InstanceType: t3.micro
+  
+  RegionMap:
+    ap-south-1:
+      AMI: ami-023a307f3d27ea427
+    ap-northeast-1:
+      AMI: ami-023a307f3d27ea427
+
+Conditions:
+  CreateEIPforProd: !Equals [!Ref EnvironmentName, prod]
+  CreateProdSecurityGroup: !Equals [!Ref EnvironmentName, prod]
+  CreateDevSecurityGroup: !Not [{ Condition: CreateProdSecurityGroup }]
+
+Resources:
+  MyEC2Instance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceType: !FindInMap [EnvironmentMap, !Ref EnvironmentName, InstanceType]
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
+      SecurityGroupIds:
+        - !If [CreateDevSecurityGroup, !Ref MyDevSecurityGroup , !Ref MyProdSecurityGroup]
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -y update
+          sudo DEBIAN_FRONTEND=noninteractive apt install -y net-tools
+          sudo DEBIAN_FRONTEND=noninteractive apt install -y nginx
+          sudo systemctl start nginx
+          sudo systemctl status nginx 
+          sudo ls -la /usr/share/nginx/html
+          sudo rm /usr/share/nginx/html/index.html
+          touch /usr/share/nginx/html/index.html
+          echo "Welcome to AWS CFT Labs !" | sudo tee /usr/share/nginx/html/index.html
+          sudo cd /var/www/html
+          sudo rm -rf *
+          echo "Welcome to AWS CFT Labs !" | sudo tee /var/www/html/index.html
+          sudo systemctl restart nginx
+          sudo systemctl status nginx
+          sudo netstat -ntlp | grep 80
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-instance
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  MyProdSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateProdSecurityGroup
+    Properties:
+      GroupDescription: Test SG for Prod ENV
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  MyDevSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateDevSecurityGroup
+    Properties:
+      GroupDescription: Test SG for the DEV ENV
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+  
+  MyEIP:
+    Type: "AWS::EC2::EIP"
+    Condition: CreateEIPforProd
+    Properties:
+      InstanceId: !Ref MyEC2Instance
+
+Outputs:
+  InstanceId:
+    Description: Instance ID 
+    Value: !Ref MyEC2Instance
+  
+  InstancePublicIp:
+    Description: Public IP of the Instance
+    Value: !GetAtt MyEC2Instance.PublicIp

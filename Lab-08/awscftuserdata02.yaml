@@ -1,0 +1,239 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS CFT Templates for Implementing Init Scripts
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Description: Choosing ENV to deploy resource
+    Default: local
+    AllowedValues:
+      - local
+      - dev
+      - stg
+      - prod
+
+  RegionName:
+    Type: String
+    Default: ap-south-1
+    AllowedValues:
+      - ap-south-1
+      - ap-northeast-1
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Environment Configuration
+        Parameters:
+          - EnvironmentName
+          - RegionName
+    ParameterLabels:
+      EnvironmentName:
+        default: Select Environment To Deploy !
+      RegionName:
+        default: Select Region Name To Deploy !
+
+Mappings:
+  EnvironmentMap:
+    dev:
+      InstanceType: t2.micro
+    stg:
+      InstanceType: t2.medium
+    prod:
+      InstanceType: t3.micro
+
+  RegionMap:
+    ap-south-1:
+      AMI: ami-023a307f3d27ea427
+    ap-northeast-1:
+      AMI: ami-023a307f3d27ea427
+
+Conditions:
+  CreateEIPforProd: !Equals
+    - !Ref EnvironmentName
+    - prod
+  CreateProdSecurityGroup: !Equals
+    - !Ref EnvironmentName
+    - prod
+  CreateDevSecurityGroup: !Not
+    - !Condition CreateProdSecurityGroup
+
+Resources:
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !FindInMap
+        - EnvironmentMap
+        - !Ref EnvironmentName
+        - InstanceType
+      ImageId: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - AMI
+      SecurityGroupIds:
+        - !If
+          - CreateDevSecurityGroup
+          - !Ref MyDevSecurityGroup
+          - !Ref MyProdSecurityGroup
+      UserData: !Base64
+        Fn::Sub: |
+          #!/bin/bash
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -y update
+          sudo DEBIAN_FRONTEND=noninteractive apt install -y net-tools
+          apt install -y unzip
+
+          # Installing Tomcat 10
+
+          wget https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.36/bin/apache-tomcat-10.1.36.zip
+          useradd -r -m -U -d /opt/tomcat -s /bin/false tomcat
+          apt install openjdk-17-jre-headless -y
+          unzip apache-tomcat-10.1.36.zip -d /opt/
+          mv /opt/apache-tomcat-10.1.36/* /opt/tomcat/
+          chown -R tomcat:tomcat /opt/tomcat/
+          chmod a+x /opt/tomcat/bin/*.sh
+
+          echo "Creating Tomcat systemd service..."
+          sudo tee /etc/systemd/system/tomcat.service > /dev/null <<EOL
+          [Unit]
+          Description=Apache Tomcat Web Application Container
+          After=network.target
+
+          [Service]
+          Type=forking
+
+          User=tomcat
+          Group=tomcat
+
+          Environment="JAVA_HOME=/usr/lib/jvm/java-1.17.0-openjdk-amd64"
+          Environment="CATALINA_HOME=/opt/tomcat"
+          Environment="CATALINA_BASE=/opt/tomcat"
+
+          ExecStart=/opt/tomcat/bin/startup.sh
+          ExecStop=/opt/tomcat/bin/shutdown.sh
+
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+          EOL
+
+          systemctl daemon-reload
+          systemctl enable tomcat
+          systemctl start tomcat
+          systemctl status tomcat
+
+          # Configuring Tomcat GUI Access
+
+          echo "Configuring Tomcat user roles and GUI access..."
+          sudo tee /opt/tomcat/conf/tomcat-users.xml > /dev/null <<EOL
+          <?xml version='1.0' encoding='utf-8'?>
+          <tomcat-users xmlns="http://tomcat.apache.org/xml"
+              version="1.0">
+          <!-- Defining Roles -->
+          <role rolename="manager-gui"/>
+          <role rolename="admin-gui"/>
+          <role rolename="manager-script"/>
+          <role rolename="manager-jmx"/>
+          <role rolename="manager-status"/>
+          <!-- Creating Users with Assigned Roles -->
+          <user username="admin" password="admin123" roles="manager-gui,admin-gui"/>
+          <user username="deployer" password="deploy123" roles="manager-script"/>
+          <user username="monitor" password="monitor123" roles="manager-status"/>
+          </tomcat-users>
+          EOL
+
+          echo "Allowing access to Tomcat Manager from any IP (0.0.0.0/0)..."
+          sudo tee /opt/tomcat/webapps/manager/META-INF/context.xml > /dev/null <<EOL
+          <Context antiResourceLocking="false" privileged="true">
+          <Valve className="org.apache.catalina.valves.RemoteAddrValve"
+            allow="0.0.0.0/0" />
+          </Context>
+          EOL
+
+          sudo tee /opt/tomcat/webapps/manager/META-INF/context.xml > /dev/null <<EOL
+          <Context privileged="true">
+            <Valve className="org.apache.catalina.valves.RemoteAddrValve" allow=".*" />
+          </Context>
+          EOL
+
+          sudo tee /opt/tomcat/webapps/host-manager/META-INF/context.xml > /dev/null <<EOL
+          <Context privileged="true">
+            <Valve className="org.apache.catalina.valves.RemoteAddrValve" allow=".*" />
+          </Context>
+          EOL
+
+          systemctl restart tomcat
+
+          sudo touch /opt/tomcat/webapps/ROOT/index.html
+
+          echo "Welcome to the AWS CFT Templates.!" > /opt/tomcat/webapps/ROOT/index.html
+
+          systemctl restart tomcat
+
+          sudo netstat -ntlp | grep 8080
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-instance
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  MyProdSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateProdSecurityGroup
+    Properties:
+      GroupDescription: Test SG for Prod ENV
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+
+  MyDevSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateDevSecurityGroup
+    Properties:
+      GroupDescription: Test SG for the DEV ENV
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+
+  MyEIP:
+    Type: AWS::EC2::EIP
+    Condition: CreateEIPforProd
+    Properties:
+      InstanceId: !Ref MyEC2Instance
+
+Outputs:
+  InstanceId:
+    Description: Instance ID
+    Value: !Ref MyEC2Instance
+
+  AppURL:
+    Description: Tomcat Web Access
+    Value: !Sub http://${MyEC2Instance.PublicIp}:8080/index.html
