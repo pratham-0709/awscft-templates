@@ -1,16 +1,176 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: 
+Description: CFT Templates groups for managing package and user management
   
 Parameters:
+    KeyName:
+      Description: SSH Key for EC2
+      Type: AWS::EC2::KeyPair::KeyName
+    
+    EnvironmentName:
+        Type: String
+        Default: dev
+        AllowedValues:
+        - dev
+        - prod
+        ConstraintDescription: Must Be Either Development and Production
+
+    InstanceType:    # Added missing InstanceType parameter
+      Type: String
+      Default: t2.micro
+      AllowedValues:
+        - t2.micro
+        - t2.small
+        - t2.medium
+      Description: Select instance type for the EC2 instance
+
+    VPCID:
+      Type: String
+      Description: Enter The Existing VPC ID
+
+    SubnetId:
+      Type: String
+      Description: Subnet of the VPC need to be used
+
+    SecurityGroupId:
+      Type: String
+      Description: Enter the SecurityGroup ID
+  
+    AvailabilityZone:    # Fixed spelling of 'Availability'
+      Description: AZ for the Instance
+      Type: String
+      Default: ap-south-1a
+      AllowedValues:
+        - ap-south-1a
+        - ap-south-1b
+        - ap-south-1c
   
 Metadata:
-  
-Mappings:
-  
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "EC2 Instance Configuration"    
+        Parameters:
+          - InstanceType
+          - KeyName
+          - AvailabilityZone  
+      - Label:
+          default: "Environment Configuration"          
+        Parameters:
+          - EnvironmentName  
+    ParameterLabels:
+      EnvironmentName:
+        default: "Which environment we are planning to create this instance?"
+      KeyName:
+        default: "Be aware that once keyname is selected we cannot change it unless instance replaced"
+
 Conditions:
-  
+  CreateEIPForProd: !Equals [!Ref EnvironmentName, prod]
+
 Resources:
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+            default:
+            - setupGroups
+            - setupUsers
+            - installPackages
+            - fetchSources
+            - setupFiles
+            - runCommands
+        setupGroups:
+          groups:
+            devgrp:
+              gid: "6121"
+        setupUsers:
+          users:
+            devuser:
+              groups:
+                - devgrp
+              uid: "2125"
+              homeDir: "/home/devuser"
+        installPackages:
+          packages:
+            apt:
+              openjdk-17-jdk: []
+              openjdk-17-jre: []
+        fetchSources:
+          sources:
+            "/tmp": "https://devbucket-067.s3.ap-south-1.amazonaws.com/cfn/demo1.zip"
+        setupFiles:
+          files:
+            "/home/devuser/app.json":
+              content: |
+                {
+                  "app_name": "DevApp",
+                  "version": "1.0"
+                }
+              mode: "000644"
+              owner: "devuser"
+              group: "devuser"
+        runCommands:
+          commands:
+            cmd1:
+              command: "chmod a+x demo.war"
+              cwd: "/tmp"
+            cmd2:
+              command: "sudo mkdir -p /home/devuser/devdir"
+            cmd3:
+              command: "sudo sh -c 'echo \"Welcome to AWS CFT Labs !\" > /home/devuser/devdir/index.html'"
+    Properties:
+        ImageId: ami-023a307f3d27ea427
+        InstanceType: !Ref InstanceType
+        AvailabilityZone: !Ref AvailabilityZone
+        UserData:
+            Fn::Base64: !Sub |
+                #! /bin/bash
+                exec > /var/log/user-data.log 2>&1  # Capture all logs
+                set -x  # Debugging mode
+
+                sudo DEBIAN_FRONTEND=noninteractive apt-get -y update
+                sudo DEBIAN_FRONTEND=noninteractive apt install -y net-tools unzip python3-pip
+
+                # Install cfn-bootstrap and verify
+                sudo python3 -m pip install --upgrade --force-reinstall https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
+                if ! command -v /usr/local/bin/cfn-init &> /dev/null; then
+                    echo "cfn-init installation failed!" | tee /var/log/cfn-init-error.log
+                    exit 1
+                fi
+
+                # Run cfn-init (ensures group creation happens first)
+                sudo /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource MyEC2Instance --region ${AWS::Region} --configsets default | tee /var/log/cfn-init.log
+
+                # Ensure cfn-init runs successfully before signaling
+                if [ $? -eq 0 ]; then
+                    sudo /usr/local/bin/cfn-signal -e 0 --stack ${AWS::StackName} --resource MyEC2Instance --region ${AWS::Region}
+                else
+                    sudo /usr/local/bin/cfn-signal -e 1 --stack ${AWS::StackName} --resource MyEC2Instance --region ${AWS::Region}
+                    echo "cfn-init failed!" | tee /var/log/cfn-init-error.log
+                    exit 1
+                fi
+        KeyName: !Ref KeyName
+        SubnetId: !Ref SubnetId
+        SecurityGroupIds:
+        - !Ref SecurityGroupId
+        Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-instance
+        - Key: Environment
+          Value: !Ref EnvironmentName
   
-Transform:
+  MyProdEIP:
+    Type: AWS::EC2::EIP
+    Condition: CreateEIPForProd
+    Properties:    # Fixed Properties format
+      Domain: vpc    # Added required Domain property
+      InstanceId: !Ref MyEC2Instance    # Fixed format
   
 Outputs:
+  InstanceId:
+    Description: Instance ID 
+    Value: !Ref MyEC2Instance
+  
+  DNSName:
+    Description: DNS Address of the Instance
+    Value: !GetAtt MyEC2Instance.PublicDnsName
