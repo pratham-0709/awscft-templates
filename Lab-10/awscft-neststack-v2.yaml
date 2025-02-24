@@ -1,0 +1,221 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Nested Stack For EC2 and VPC Provisioning
+  
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: SSH Key For Instance
+
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - stg
+      - prod
+    ConstraintDescription: Select Environment Wisely !
+  
+  InstanceType:    # Added missing InstanceType parameter
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+    Description: Select instance type for the EC2 instance
+
+  VpcBlock:
+    Type: String
+    Description: VPC CIDR Range
+
+  Subnet01Block:
+    Type: String
+    Description: CIDR Block for Subnet 01
+
+  Subnet02Block:
+    Type: String
+    Description: CIDR Block for Subnet 02
+
+  AvailabilityZone1:
+    Type: AWS::EC2::AvailabilityZone::Name
+    Description: Availability Zone for Subnet 01
+
+  AvailabilityZone2:
+    Type: AWS::EC2::AvailabilityZone::Name
+    Description: Availability Zone for Subnet 02
+  
+Conditions:
+  CreateEIPForProd: !Equals [!Ref EnvironmentName, prod]
+
+Resources:
+  MyStackVPC:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://cf-templates-mjucylwso1qp0-ap-south-1.s3.ap-south-1.amazonaws.com/template-1740406428466.yaml
+      Parameters:
+        VpcBlock: !Ref VpcBlock
+        Subnet01Block: !Ref Subnet01Block
+        Subnet02Block: !Ref Subnet02Block
+        AvailabilityZone1: !Ref AvailabilityZone1
+        AvailabilityZone2: !Ref AvailabilityZone2
+      TimeoutInMinutes: 3
+  
+  StackSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !GetAtt MyStackVPC.Outputs.VpcId
+      GroupDescription: Apps Security Group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 9080
+          ToPort: 9080
+          CidrIp: 0.0.0.0/0   
+        - IpProtocol: tcp
+          FromPort: 80  
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0     
+
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT5M
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+            default:
+            - setupGroups
+            - setupUsers
+            - installPackages
+            - fetchSources
+            - setupFiles
+            - runCommands
+            - serviceChecks
+        setupGroups:
+          groups:
+            devgrp:
+              gid: "6121"
+        setupUsers:
+          users:
+            devuser:
+              groups:
+                - devgrp
+              uid: "2125"
+              homeDir: "/home/devuser"
+        installPackages:
+          packages:
+            apt:
+              openjdk-17-jdk: []
+              openjdk-17-jre: []
+              nginx: []
+        fetchSources:
+          sources:
+            "/tmp": "https://devbucket-067.s3.ap-south-1.amazonaws.com/cfn/demo1.zip"
+        setupFiles:
+          files:
+            "/etc/cfn/hooks.d/cfn-hup.conf":
+              content:  !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                mode: "000400"
+                user: "root"
+                group: "root"
+            "/etc/cfn/hooks.d/cfn-auto-reloader.conf":
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.MyEC2Instance.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource MyEC2Instance --region ${AWS::Region}
+        runCommands:
+          commands:
+            cmd1:
+              command: "chmod a+x demo.war"
+              cwd: "/tmp"
+            cmd2:
+              command: "sudo truncate -s 0 /var/www/html/index.nginx-debian.html" 
+            cmd3:
+              command: "echo 'Welcome to AWS CFT Labs!' | sudo tee /var/www/html/index.nginx-debian.html"
+        serviceChecks:
+          services:
+            systemd:
+              nginx:
+                enabled: true
+                ensureRunning: true
+    Properties:
+      ImageId: ami-023a307f3d27ea427
+      InstanceType: !Ref InstanceType
+      AvailabilityZone: !Ref AvailabilityZone2
+      UserData:
+        Fn::Base64: !Sub |
+          #! /bin/bash
+          exec > /var/log/user-data.log 2>&1  # Capture all logs
+          set -x  # Debugging mode
+
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -y update
+          sudo DEBIAN_FRONTEND=noninteractive apt install -y net-tools unzip python3-pip
+
+          # Install cfn-bootstrap and verify
+          sudo python3 -m pip install --upgrade --force-reinstall https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
+          if ! command -v /usr/local/bin/cfn-init &> /dev/null; then
+            echo "cfn-init installation failed!" | tee /var/log/cfn-init-error.log
+          exit 1
+          fi
+
+          # Run cfn-init (ensures group creation happens first)
+          sudo /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource MyEC2Instance --region ${AWS::Region} --configsets default | tee /var/log/cfn-init.log
+
+          # Ensure cfn-init runs successfully before signaling
+          if [ $? -eq 0 ]; then
+              sudo /usr/local/bin/cfn-signal -e 0 --stack ${AWS::StackName} --resource MyEC2Instance --region ${AWS::Region}
+          else
+              sudo /usr/local/bin/cfn-signal -e 1 --stack ${AWS::StackName} --resource MyEC2Instance --region ${AWS::Region}
+              echo "cfn-init failed!" | tee /var/log/cfn-init-error.log
+          exit 1
+          fi
+      KeyName: !Ref KeyName
+      SubnetId: !GetAtt MyStackVPC.Outputs.Subnet02Id
+      SecurityGroupIds:
+        - !Ref StackSecurityGroup
+      Tags:
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-instance
+      - Key: Environment
+        Value: !Ref EnvironmentName
+  
+  MyProdEIP:
+    Type: AWS::EC2::EIP
+    Condition: CreateEIPForProd
+    Properties:    # Fixed Properties format
+      Domain: vpc    # Added required Domain property
+      InstanceId: !Ref MyEC2Instance    # Fixed format
+
+Outputs:
+  
+  Subnet01Id:
+    Description: Subnet 01 ID
+    Value: !GetAtt MyStackVPC.Outputs.Subnet01Id
+    Export:
+      Name: !Sub "${AWS::StackName}-${EnvironmentName}-Subnet01"
+
+  Subnet02Id:
+    Description: Subnet 02 ID
+    Value: !GetAtt MyStackVPC.Outputs.Subnet02Id
+    Export:
+      Name: !Sub "${AWS::StackName}-${EnvironmentName}-Subnet02"
+  
+  WEBUrl:
+    Description: Web Server URL
+    Value: !Sub 'http://${MyEC2Instance.PublicDnsName}'

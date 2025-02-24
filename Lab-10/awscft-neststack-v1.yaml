@@ -1,0 +1,119 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: VPC Nested Stack Template with Two Subnets in Different AZs
+
+Parameters:
+  EnvironmentName:
+        Type: String
+        Default: dev
+        AllowedValues:
+        - dev
+        - stg
+        - prod
+        ConstraintDescription: Select Environment Wisely !
+
+  VpcBlock:
+    Type: String
+    Description: VPC CIDR Range
+
+  Subnet01Block:
+    Type: String
+    Description: CIDR Block for Subnet 01
+
+  Subnet02Block:
+    Type: String
+    Description: CIDR Block for Subnet 02
+
+  AvailabilityZone1:
+    Type: AWS::EC2::AvailabilityZone::Name
+    Description: Availability Zone for Subnet 01
+
+  AvailabilityZone2:
+    Type: AWS::EC2::AvailabilityZone::Name
+    Description: Availability Zone for Subnet 02
+
+Resources:
+  myVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcBlock
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-${EnvironmentName}-VPC"
+
+  Subnet01:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref myVPC
+      CidrBlock: !Ref Subnet01Block
+      AvailabilityZone: !Ref AvailabilityZone1
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-${EnvironmentName}-Subnet01"
+
+  Subnet02:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref myVPC
+      CidrBlock: !Ref Subnet02Block
+      AvailabilityZone: !Ref AvailabilityZone2
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-${EnvironmentName}-Subnet02"
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref myVPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-${EnvironmentName}-PublicRouteTable"
+
+  Subnet01RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet01
+      RouteTableId: !Ref PublicRouteTable
+
+  Subnet02RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet02
+      RouteTableId: !Ref PublicRouteTable
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-${EnvironmentName}-InternetGateway"
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref myVPC    
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+Outputs:
+  Subnet01Id:
+    Description: Subnet 01 ID
+    Value: !Ref Subnet01
+
+  Subnet02Id:
+    Description: Subnet 02 ID
+    Value: !Ref Subnet02
+
+  VpcId:
+    Description: VPC ID
+    Value: !Ref myVPC
