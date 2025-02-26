@@ -1,0 +1,51 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: SecurityGroup for Nested Stack
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - stg
+      - prod
+    ConstraintDescription: Select Environment Wisely !
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: SG in the respective VPC
+
+Resources:
+  StackSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for nested stack
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          CidrIp: 0.0.0.0/0
+
+Outputs:
+  SecurityGroupId:
+    Description: Security Group ID for use in other stacks
+    Value: !Ref StackSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-SecurityGroupId"
