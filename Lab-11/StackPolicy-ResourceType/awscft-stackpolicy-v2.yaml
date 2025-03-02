@@ -1,0 +1,90 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CFT Templates for Policy
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    ConstraintDescription: Must Be Either Development and Production
+
+  InstanceType:    # Added missing InstanceType parameter
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+    Description: Select instance type for the EC2 instance
+
+  VPCID:
+    Type: String
+    Description: Enter The Existing VPC ID
+
+  SubnetId:
+    Type: String
+    Description: Subnet of the VPC need to be used
+
+  AvailabilityZone:    # Fixed spelling of 'Availability'
+    Description: AZ for the Instance
+    Type: String
+    Default: ap-south-1a
+    AllowedValues:
+      - ap-south-1a
+      - ap-south-1b
+      - ap-south-1c
+
+Resources:
+
+  MyStackSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPCID  # Added VPC ID reference
+      GroupDescription: Test SG for Prod ENV
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-00bb6a80f01f03502
+      InstanceType: !Ref InstanceType
+      AvailabilityZone: !Ref AvailabilityZone    # Fixed spelling
+      SubnetId: !Ref SubnetId    # Added missing SubnetId
+      SecurityGroupIds:    # Added missing Security Group
+        - !Ref MyStackSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-instance
+        - Key: Environment
+          Value: !Ref EnvironmentName
+    
+Outputs:
+  InstanceId:
+    Description: Instance ID 
+    Value: !Ref MyEC2Instance
+  
+  InstancePublicIp:
+    Description: Public IP of the Instance
+    Value: !GetAtt MyEC2Instance.PublicIp
+  
+  DNSName:
+    Description: DNS Address of the Instance
+    Value: !GetAtt MyEC2Instance.PublicDnsName
+  
+  AZ:
+    Description: Availability Zone of the Instance
+    Value: !GetAtt MyEC2Instance.AvailabilityZone
